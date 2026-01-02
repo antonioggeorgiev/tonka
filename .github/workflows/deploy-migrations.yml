@@ -4,9 +4,7 @@ on:
   push:
     branches:
       - main
-    paths:
-      - "prisma/migrations/**"
-      - "prisma/schema.prisma"
+
   workflow_dispatch:
 
 jobs:
@@ -17,23 +15,26 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Turso CLI
-        run: |
-          curl -sSfL https://get.tur.so/install.sh | bash
-          echo "$HOME/.turso/bin" >> $GITHUB_PATH
-
-      - name: Apply migrations to Turso
+      - name: Install Turso CLI and apply migrations
         env:
           TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
           TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
         run: |
+          # Install Turso CLI
+          curl -sSfL https://get.tur.so/install.sh | bash
+          export PATH="$HOME/.turso/bin:$PATH"
+
+          # Verify installation
+          turso --version
+
           # Extract database name from URL
           DB_NAME=$(echo $TURSO_DATABASE_URL | sed 's|libsql://\([^.]*\).*|\1|')
+          echo "Database name: $DB_NAME"
 
           # Find and apply all migration files in order
           for migration_dir in $(ls -d prisma/migrations/*/ | sort); do
             if [ -f "${migration_dir}migration.sql" ]; then
               echo "Applying migration: $(basename $migration_dir)"
-              turso db shell $DB_NAME < "${migration_dir}migration.sql" || echo "Migration may have already been applied"
+              turso db shell $DB_NAME < "${migration_dir}migration.sql" || echo "Migration failed or already applied"
             fi
           done
