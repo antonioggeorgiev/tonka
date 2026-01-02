@@ -3,7 +3,7 @@ name: Deploy Database Migrations
 on:
   push:
     branches:
-      - master
+      - main
     paths:
       - "prisma/migrations/**"
       - "prisma/schema.prisma"
