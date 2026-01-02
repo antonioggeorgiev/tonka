@@ -12,7 +12,7 @@ const createPrismaClient = () => {
       authToken: env.DATABASE_AUTH_TOKEN,
     });
     return new PrismaClient({
-      adapter: adapter as any,
+      adapter,
       log:
         env.NODE_ENV === "development" ? ["query", "error", "warn"] : ["error"],
     });
