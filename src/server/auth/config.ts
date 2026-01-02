@@ -1,6 +1,7 @@
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { type DefaultSession, type NextAuthConfig } from "next-auth";
-import DiscordProvider from "next-auth/providers/discord";
+import { env } from "~/env";
+import EmailProvider from "next-auth/providers/nodemailer";
 
 import { db } from "~/server/db";
 
@@ -32,7 +33,10 @@ declare module "next-auth" {
  */
 export const authConfig = {
   providers: [
-    DiscordProvider,
+    EmailProvider({
+      server: env.EMAIL_SERVER,
+      from: env.EMAIL_FROM,
+    }),
     /**
      * ...add more providers here.
      *
@@ -45,6 +49,14 @@ export const authConfig = {
   ],
   adapter: PrismaAdapter(db),
   callbacks: {
+    // Restrict access to only your admin email
+    async signIn({ user }) {
+      if (user.email === env.ADMIN_EMAIL) {
+        return true;
+      }
+      // Deny access for any other email
+      return false;
+    },
     session: ({ session, user }) => ({
       ...session,
       user: {
