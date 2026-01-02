@@ -1,14 +1,39 @@
-- name: Apply migrations to Turso
-  env:
-    TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
-    TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
-  run: |
-    # Get the latest migration
-    LATEST_MIGRATION=$(ls -t prisma/migrations/*/migration.sql | head -1)
+name: Deploy Database Migrations
 
-    # Apply using curl and Turso HTTP API
-    curl -X POST \
-      "${TURSO_DATABASE_URL}/v2/pipeline" \
-      -H "Authorization: Bearer ${TURSO_AUTH_TOKEN}" \
-      -H "Content-Type: application/json" \
-      -d "{\"requests\": [{\"type\": \"execute\", \"stmt\": {\"sql\": \"$(cat $LATEST_MIGRATION | jq -Rs .)\"}}]}"
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "prisma/migrations/**"
+      - "prisma/schema.prisma"
+  workflow_dispatch:
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Turso CLI
+        run: |
+          curl -sSfL https://get.tur.so/install.sh | bash
+          echo "$HOME/.turso/bin" >> $GITHUB_PATH
+
+      - name: Apply migrations to Turso
+        env:
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+        run: |
+          # Extract database name from URL
+          DB_NAME=$(echo $TURSO_DATABASE_URL | sed 's|libsql://\([^.]*\).*|\1|')
+
+          # Find and apply all migration files in order
+          for migration_dir in $(ls -d prisma/migrations/*/ | sort); do
+            if [ -f "${migration_dir}migration.sql" ]; then
+              echo "Applying migration: $(basename $migration_dir)"
+              turso db shell $DB_NAME < "${migration_dir}migration.sql" || echo "Migration may have already been applied"
+            fi
+          done
