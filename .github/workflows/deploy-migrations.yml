@@ -15,26 +15,43 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install Turso CLI and apply migrations
+      - name: Apply migrations to Turso via HTTP API
         env:
           TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
           TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
         run: |
-          # Install Turso CLI
-          curl -sSfL https://get.tur.so/install.sh | bash
-          export PATH="$HOME/.turso/bin:$PATH"
+          # Convert libsql:// URL to https:// for HTTP API
+          HTTP_URL=$(echo $TURSO_DATABASE_URL | sed 's|libsql://|https://|')
 
-          # Verify installation
-          turso --version
-
-          # Extract database name from URL
-          DB_NAME=$(echo $TURSO_DATABASE_URL | sed 's|libsql://\([^.]*\).*|\1|')
-          echo "Database name: $DB_NAME"
+          echo "Applying migrations to Turso database..."
 
           # Find and apply all migration files in order
           for migration_dir in $(ls -d prisma/migrations/*/ | sort); do
             if [ -f "${migration_dir}migration.sql" ]; then
-              echo "Applying migration: $(basename $migration_dir)"
-              turso db shell $DB_NAME < "${migration_dir}migration.sql" || echo "Migration failed or already applied"
+              MIGRATION_NAME=$(basename $migration_dir)
+              echo "Applying migration: $MIGRATION_NAME"
+              
+              # Read the SQL file
+              SQL_CONTENT=$(cat "${migration_dir}migration.sql")
+              
+              # Execute via Turso HTTP API
+              RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+                "${HTTP_URL}/v2/pipeline" \
+                -H "Authorization: Bearer ${TURSO_AUTH_TOKEN}" \
+                -H "Content-Type: application/json" \
+                -d "{\"requests\": [{\"type\": \"execute\", \"stmt\": {\"sql\": $(echo "$SQL_CONTENT" | jq -Rs .)}}]}")
+              
+              HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+              BODY=$(echo "$RESPONSE" | sed '$d')
+              
+              if [ "$HTTP_CODE" -eq 200 ]; then
+                echo "✓ Migration $MIGRATION_NAME applied successfully"
+              else
+                echo "✗ Migration $MIGRATION_NAME failed with HTTP $HTTP_CODE"
+                echo "Response: $BODY"
+                exit 1
+              fi
             fi
           done
+
+          echo "All migrations applied successfully!"
