@@ -40,6 +40,7 @@ model Account {
     expires_at               Int?
     createdAt                DateTime @default(now())
     deletedAt                DateTime?
+    updatedAt                DateTime @updatedAt
     token_type               String?
     scope                    String?
     id_token                 String? // @db.Text
